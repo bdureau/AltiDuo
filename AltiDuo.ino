@@ -1,5 +1,5 @@
 /*
-  Model Rocket dual altimeter Ver 1.1
+  Model Rocket dual altimeter Ver 1.2
  Copyright Boris du Reau 2012-2013
  
  This is using a BMP085 presure sensor and an Atmega 328
@@ -31,14 +31,11 @@
 //
 /////////////////////////////////////////////////////////////////////////////
 #include <Wire.h>
-
 #include <Adafruit_BMP085.h>
 
 #define DEBUG //=true
 
 Adafruit_BMP085 bmp;
-
-
 
 //ground level altitude
 long initialAltitude;
@@ -89,9 +86,19 @@ void setup()
   int val = 0;     // variable to store the read value
   int val1 = 0;     // variable to store the read value
   
-  //set up pins
-  pinMode(pinApogeeContinuity, INPUT);
-  pinMode(pinMainContinuity, INPUT);
+  //init Kalman filter
+  KalmanInit();
+  
+  // initialize the serial communication for debuging
+  //Serial.begin(9600);
+
+  //Wire.begin();
+  //Presure Sensor Initialisation
+  bmp.begin();
+  //our drogue has not been fired
+  apogeeHasFired=false;
+  mainHasFired=false;
+  
   //Initialise the output pin
   pinMode(pinApogee, OUTPUT);
   pinMode(pinMain, OUTPUT);
@@ -99,42 +106,27 @@ void setup()
   
   pinMode(pinAltitude1, INPUT);
   pinMode(pinAltitude2, INPUT);
+  
+  pinMode(pinApogeeContinuity, INPUT);
+  pinMode(pinMainContinuity, INPUT);
   //Make sure that the output are turned off
   digitalWrite(pinApogee, LOW);
   digitalWrite(pinMain, LOW);
   digitalWrite(pinSpeaker, LOW);
   
-  //init Kalman filter
-  KalmanInit();
+  //initialisation give the version of the altimeter
+  //One long beep per major number and One short beep per minor revision
+  //For example version 1.2 would be one long beep and 2 short beep
+  beepAltiVersion(1,2);
   
-  // initialize the serial communication for debuging
-  Serial.begin(9600);
-
-  Wire.begin();
-  //Presure Sensor Initialisation
-  bmp.begin();
-  //initialisation
-  beginBeepSeq();
-  //our drogue has not been fired
-  apogeeHasFired=false;
-  mainHasFired=false;
-  
-  //let's read the lauch site altitude
-  long sum = 0;
-  for (int i=0; i<10; i++){
-    sum += KalmanCalc(bmp.readAltitude());
-    delay(500); }
-  initialAltitude = (sum / 10.0);
-  
-  lastAltitude = initialAltitude; 
-  liftoffAltitude = initialAltitude + 20;
   //number of measures to do to detect Apogee
   measures = 10;
-
+  
   //initialise the deployement altitude for the main 
   mainDeployAltitude = 100;
 
-
+  // On the Alti duo when you close the jumper you set it to 1
+  // val is the left jumper and val1 is the right jumper
   val = digitalRead(pinAltitude1); 
   val1 = digitalRead(pinAltitude2);  
   if(val == 0 && val1 ==0)
@@ -153,6 +145,23 @@ void setup()
   {
     mainDeployAltitude = 200;
   }
+  // let's do some dummy altitude reading
+  // to initialise the Kalman filter
+  for (int i=0; i<50; i++){
+    KalmanCalc(bmp.readAltitude());
+   }
+  //let's read the lauch site altitude
+  long sum = 0;
+  long curr = 0;
+  for (int i=0; i<10; i++){
+    curr =KalmanCalc(bmp.readAltitude());
+    sum += curr;
+    delay(50); }
+  initialAltitude = (sum / 10.0);
+  
+  lastAltitude = 0; 
+
+  liftoffAltitude = 20;
 
 }
 
@@ -160,6 +169,7 @@ void loop()
 {
   //read current altitude
   currAltitude = (KalmanCalc(bmp.readAltitude())- initialAltitude);
+
   if (( currAltitude > liftoffAltitude) != true)
   {
     continuityCheck(pinApogeeContinuity);
@@ -203,22 +213,13 @@ void loop()
   if(apogeeHasFired == true && mainHasFired==true)
   {
     beginBeepSeq();
-    
-    //#ifdef DEBUG
-    Serial.println("Initial Altitude:");
-    Serial.println( initialAltitude);
-    Serial.println("Apogee Altitude:");
-    Serial.println( apogeeAltitude);
+     
     beepAltitude(apogeeAltitude);
-    //#endif
+
     beginBeepSeq();
     
-    //#ifdef DEBUG
-    Serial.println("Main Altitude:");
-    Serial.println(mainAltitude);
     beepAltitude(mainAltitude);
-    //#endif
-  }
+      }
 }
 
 void continuityCheck(int pin)
@@ -261,16 +262,13 @@ void beepAltitude(long altitude)
     nbrLongBeep = 0;
     nbrShortBeep = (altitude/10); 
   }
-  Serial.println("long beep:");
-  Serial.println( nbrLongBeep);
   if (nbrLongBeep > 0)
   for (i = 1; i <  nbrLongBeep +1 ; i++)
   {
     longBeep();
     delay(50);
   } 
- Serial.println("Short beep:" );
-Serial.println(nbrShortBeep);
+
   if (nbrShortBeep > 0)
   for (i = 1; i <  nbrShortBeep +1 ; i++)
   {
@@ -359,3 +357,16 @@ float KalmanCalc (float altitude)
    //KAlt = kalman_x; //FLOAT Kalman-filtered altitude value
   return kalman_x;
 }  
+
+void beepAltiVersion (int majorNbr, int minorNbr)
+{
+  int i;
+  for (i=0; i<majorNbr;i++)
+  {
+    longBeep();
+  }
+  for (i=0; i<minorNbr;i++)
+  {
+    shortBeep();
+  }  
+}
