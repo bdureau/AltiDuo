@@ -1,5 +1,5 @@
 /*
-  Model Rocket dual altimeter Ver 1.1
+  Model Rocket dual altimeter Ver 1.3
  Copyright Boris du Reau 2012-2013
  
  This is using a BMP085 presure sensor and an Atmega 328
@@ -31,14 +31,15 @@
 //
 /////////////////////////////////////////////////////////////////////////////
 #include <Wire.h>
-
 #include <Adafruit_BMP085.h>
 
 #define DEBUG //=true
+///#define METRIC_UNIT
+#undef METRIC_UNIT
+#define BEEP_DIGIT
+//#undef BEEP_DIGIT
 
 Adafruit_BMP085 bmp;
-
-
 
 //ground level altitude
 long initialAltitude;
@@ -89,21 +90,6 @@ void setup()
   int val = 0;     // variable to store the read value
   int val1 = 0;     // variable to store the read value
   
-  //set up pins
-  pinMode(pinApogeeContinuity, INPUT);
-  pinMode(pinMainContinuity, INPUT);
-  //Initialise the output pin
-  pinMode(pinApogee, OUTPUT);
-  pinMode(pinMain, OUTPUT);
-  pinMode(pinSpeaker, OUTPUT);
-  
-  pinMode(pinAltitude1, INPUT);
-  pinMode(pinAltitude2, INPUT);
-  //Make sure that the output are turned off
-  digitalWrite(pinApogee, LOW);
-  digitalWrite(pinMain, LOW);
-  digitalWrite(pinSpeaker, LOW);
-  
   //init Kalman filter
   KalmanInit();
   
@@ -113,28 +99,38 @@ void setup()
   Wire.begin();
   //Presure Sensor Initialisation
   bmp.begin();
-  //initialisation
-  beginBeepSeq();
   //our drogue has not been fired
   apogeeHasFired=false;
   mainHasFired=false;
   
-  //let's read the lauch site altitude
-  long sum = 0;
-  for (int i=0; i<10; i++){
-    sum += KalmanCalc(bmp.readAltitude());
-    delay(500); }
-  initialAltitude = (sum / 10.0);
+  //Initialise the output pin
+  pinMode(pinApogee, OUTPUT);
+  pinMode(pinMain, OUTPUT);
+  pinMode(pinSpeaker, OUTPUT);
   
-  lastAltitude = initialAltitude; 
-  liftoffAltitude = initialAltitude + 20;
+  pinMode(pinAltitude1, INPUT);
+  pinMode(pinAltitude2, INPUT);
+  
+  pinMode(pinApogeeContinuity, INPUT);
+  pinMode(pinMainContinuity, INPUT);
+  //Make sure that the output are turned off
+  digitalWrite(pinApogee, LOW);
+  digitalWrite(pinMain, LOW);
+  digitalWrite(pinSpeaker, LOW);
+  
+  //initialisation give the version of the altimeter
+  //One long beep per major number and One short beep per minor revision
+  //For example version 1.2 would be one long beep and 2 short beep
+  beepAltiVersion(1,3);
+  
   //number of measures to do to detect Apogee
   measures = 10;
-
+  
   //initialise the deployement altitude for the main 
   mainDeployAltitude = 100;
 
-
+  // On the Alti duo when you close the jumper you set it to 1
+  // val is the left jumper and val1 is the right jumper
   val = digitalRead(pinAltitude1); 
   val1 = digitalRead(pinAltitude2);  
   if(val == 0 && val1 ==0)
@@ -153,6 +149,23 @@ void setup()
   {
     mainDeployAltitude = 200;
   }
+  // let's do some dummy altitude reading
+  // to initialise the Kalman filter
+  for (int i=0; i<50; i++){
+    KalmanCalc(bmp.readAltitude());
+   }
+  //let's read the lauch site altitude
+  long sum = 0;
+  long curr = 0;
+  for (int i=0; i<10; i++){
+    curr =KalmanCalc(bmp.readAltitude());
+    sum += curr;
+    delay(50); }
+  initialAltitude = (sum / 10.0);
+  
+  lastAltitude = 0; 
+
+  liftoffAltitude = 20;
 
 }
 
@@ -160,6 +173,7 @@ void loop()
 {
   //read current altitude
   currAltitude = (KalmanCalc(bmp.readAltitude())- initialAltitude);
+
   if (( currAltitude > liftoffAltitude) != true)
   {
     continuityCheck(pinApogeeContinuity);
@@ -204,21 +218,35 @@ void loop()
   {
     beginBeepSeq();
     
-    //#ifdef DEBUG
-    Serial.println("Initial Altitude:");
-    Serial.println( initialAltitude);
-    Serial.println("Apogee Altitude:");
-    Serial.println( apogeeAltitude);
-    beepAltitude(apogeeAltitude);
-    //#endif
-    beginBeepSeq();
+    #ifdef BEEP_DIGIT 
+      #ifdef METRIC_UNIT
+      beepAltitudeNew(apogeeAltitude);
+      #else
+      beepAltitudeNew(apogeeAltitude*3.28084);
+      #endif
+    #else
+      #ifdef METRIC_UNIT
+      beepAltitude(apogeeAltitude);
+      #else
+      beepAltitudeFeet(apogeeAltitude);
+      #endif
+    #endif
     
-    //#ifdef DEBUG
-    Serial.println("Main Altitude:");
-    Serial.println(mainAltitude);
-    beepAltitude(mainAltitude);
-    //#endif
-  }
+    beginBeepSeq();
+    #ifdef BEEP_DIGIT
+      #ifdef METRIC_UNIT
+      beepAltitudeNew(mainAltitude);
+      #else
+      beepAltitudeNew(mainAltitude*3.28084);
+      #endif
+    #else
+      #ifdef METRIC_UNIT
+      beepAltitude(mainAltitude);
+      #else
+      beepAltitudeFeet(mainAltitude);
+      #endif
+    #endif
+   }
 }
 
 void continuityCheck(int pin)
@@ -242,11 +270,15 @@ void continuityCheck(int pin)
 }
 
 
-
+///////////////////////////////////////////////////////////////
+// fonction to beep the altitude in feet or meter
+// 1 meter = 3.2804 feet
+//
+///////////////////////////////////////////////////////////
 void beepAltitude(long altitude)
 {
   int i;
-  // this is the laste thing that I need to write, some code to beep the altitude
+  // this is the last thing that I need to write, some code to beep the altitude
   //altitude is in meters
   //find how many digits
   if(altitude > 99)
@@ -261,16 +293,13 @@ void beepAltitude(long altitude)
     nbrLongBeep = 0;
     nbrShortBeep = (altitude/10); 
   }
-  Serial.println("long beep:");
-  Serial.println( nbrLongBeep);
   if (nbrLongBeep > 0)
   for (i = 1; i <  nbrLongBeep +1 ; i++)
   {
     longBeep();
     delay(50);
   } 
- Serial.println("Short beep:" );
-Serial.println(nbrShortBeep);
+
   if (nbrShortBeep > 0)
   for (i = 1; i <  nbrShortBeep +1 ; i++)
   {
@@ -282,6 +311,42 @@ Serial.println(nbrShortBeep);
 
 }
 
+void beepAltitudeFeet(long altitude)
+{
+  int i;
+  // this is the last thing that I need to write, some code to beep the altitude
+  //altitude is in meters and converted to feet
+  altitude = altitude *3.28084;
+  //find how many digits
+  if(altitude > 999)
+  {
+    // 1 long beep per thousand feet
+    nbrLongBeep= int(altitude /1000);
+    //then calculate the number of short beep
+    nbrShortBeep = (altitude - (nbrLongBeep * 1000)) / 100;
+  } 
+  else
+  {
+    nbrLongBeep = 0;
+    nbrShortBeep = (altitude/100); 
+  }
+  if (nbrLongBeep > 0)
+  for (i = 1; i <  nbrLongBeep +1 ; i++)
+  {
+    longBeep();
+    delay(50);
+  } 
+
+  if (nbrShortBeep > 0)
+  for (i = 1; i <  nbrShortBeep +1 ; i++)
+  {
+    shortBeep();
+    delay(50);
+  } 
+
+  delay(5000);
+
+}
 void beginBeepSeq()
 {
   int i=0;
@@ -359,3 +424,69 @@ float KalmanCalc (float altitude)
    //KAlt = kalman_x; //FLOAT Kalman-filtered altitude value
   return kalman_x;
 }  
+
+void beepAltiVersion (int majorNbr, int minorNbr)
+{
+  int i;
+  for (i=0; i<majorNbr;i++)
+  {
+    longBeep();
+  }
+  for (i=0; i<minorNbr;i++)
+  {
+    shortBeep();
+  }  
+}
+
+/*************************************************************************
+
+ The following is some Code written by Leo Nutz and modified so that it works
+  Output the maximum achieved altitude (apogee) via flashing LED / Buzzer
+
+ *************************************************************************/
+void beepAltitudeNew(uint32_t value)
+{
+  char Apogee_String[5];                        // Create an array with a buffer of 5 digits
+
+  ultoa(value, Apogee_String, 10);              // Convert unsigned long to string array, radix 10 for decimal
+  uint8_t length = strlen(Apogee_String);       // Get string length
+
+  delay(3000);                                  // Pause for 3 seconds
+
+  for(uint8_t i = 0; i < length; i++ )
+  {
+    delay(1000);                                // Pause 1 second for every digit output
+
+    uint8_t digit = (Apogee_String[i] - '0');   // Convert ASCI to actual numerical digit
+
+    if(digit == 0)                              // If digit = 0 then 2 quick flashes/beeps
+    {
+      output_FLASHLED(4, 200);                  // 2 flashes/beeps with 200 ms delay
+    }
+    else
+    {      
+      for(uint8_t ii = 0 ; ii < digit ; ii++ )  // Digits 1 to 9
+      {
+        output_FLASHLED(1, 700);                // Flash/beep on with 700 ms delay
+        output_FLASHLED(1, 500);                // Flash/beep off with 500 ms delay
+      }
+    }
+  }
+}
+
+/**********************************************
+  Output LED / Buzzer
+ **********************************************/
+void output_FLASHLED(uint8_t count, uint16_t pause)
+{
+  //const uint8_t LED_Pin = 12;                     // Declare the pin that the LED / Buzzer is connected to  
+
+  for(uint8_t i = 0; i < count; i++)
+  {
+    //tone(pinSpeaker, 600,25);
+    digitalWrite(pinSpeaker, !digitalRead(pinSpeaker)); // Toggle on/off
+    delay(pause);
+    //noTone(pinSpeaker);
+  }
+}
+/*************************************************************************/
