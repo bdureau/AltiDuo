@@ -10,4 +10,5 @@ You will need to download the Arduino ide from the [Arduino web site](https://ww
 You have to load the Arduino Uno boot loader to your ATmega328 micro controller. 
 Make sure that you download the [support library](https://github.com/bdureau/AltimetersLibs) for the BMP085 sensor and copy them to the Arduino library folder. To compile it you need to choose the Arduino Uno board and the correct USB port.
 You will need to use a USB/TTL adapter to connect the altimeter to your computer, refer to the documentation.
+<img src="/pictures/ttl_cable.JPG" width="49%"> <img src="/pictures/cp2102-.jpg" width="49%">
 
