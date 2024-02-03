@@ -1,4 +1,4 @@
-# AltiDuo
+# AltiDuo (firmware)
 Atmel ATmega328 firmware for the AltiDuo a dual deployment rocket altimeter board.
 A standard dual altimeter that fire a charge at apogee and a second one 50, 100,150 or 200 meters before reaching the ground.
 It also has some standard features such as charges continuity test and beeping the apogee altitude.
